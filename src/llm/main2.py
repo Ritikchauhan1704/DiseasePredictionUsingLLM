@@ -28,13 +28,13 @@ chat_session = model.start_chat(
 )
 
 
-symptom_precaution = pd.read_csv("C:/Users/criti/OneDrive/Desktop/btp/src/llm/data/symptom_precaution.csv")
+symptom_precaution = pd.read_csv("D:/BTP_PROJECT/DiseasePredictionUsingLLM/src/llm/data/symptom_precaution.csv")
 diseases = symptom_precaution[["Disease"]]
 disease_dataset = diseases.to_dict(orient='records')
-with open('C:/Users/criti/OneDrive/Desktop/btp/src/llm/symptoms.json', 'r') as file:
+with open('D:/BTP_PROJECT/DiseasePredictionUsingLLM/src/llm/symptoms.json', 'r') as file:
     symptoms_json = json.load(file)
 # print(symptoms_json)
-with open('C:/Users/criti/OneDrive/Desktop/btp/src/llm/knowledge_base.json', 'r') as file:
+with open('D:/BTP_PROJECT/DiseasePredictionUsingLLM/src/llm/knowledge_base.json', 'r') as file:
     knowledge_json = json.load(file)
 
 # conversation="""
@@ -99,15 +99,50 @@ def generate(conversation):
     response = chat_session.send_message(diagnosis_prompt)
     print(response.text)
     
-    structured_output=parse_medical_data(response.text)
+    structured_output = parse_medical_data(response.text)
     print(structured_output)
+
     dataset = prepare_dataset(knowledge_json)
     model, label_encoder, feature_names = train_model(dataset)
+
+    # Get predicted disease
     predicted_disease = predict_disease(model, label_encoder, structured_output["symptoms"], feature_names)
 
-    # Display result
-    print(f"The most likely disease is: {predicted_disease}")
-    return predicted_disease
+    # Get the top 3 diseases excluding the predicted disease
+    top_diseases = structured_output["diseases"][:3]
+    other_diseases = [disease for disease in top_diseases if disease != predicted_disease]
+
+    # Get precautions for each disease (predicted and other diseases)
+    precautions = {}
+    for disease in [predicted_disease] + other_diseases:
+        precautions[disease] = structured_output["precautions"].get(disease, [])
+
+    # Prepare the result for UI
+    result_for_ui = {
+        "predicted_disease": predicted_disease,
+        "predicted_precautions": precautions.get(predicted_disease, []),
+        "other_diseases": []
+    }
+
+    # Add other likely diseases and their precautions
+    for disease in other_diseases:
+        result_for_ui["other_diseases"].append({
+            "disease": disease,
+            "precautions": precautions.get(disease, [])
+        })
+
+    # Display results in the UI-friendly format
+    ui_output = f"Predicted Disease: {result_for_ui['predicted_disease']}\n"
+    ui_output += f"Precautions: {', '.join(result_for_ui['predicted_precautions'])}\n\n"
+    
+    ui_output += "Other Likely Diseases and Their Precautions:\n"
+    for i, other_disease in enumerate(result_for_ui['other_diseases'], start=1):
+        ui_output += f"{i}. {other_disease['disease']} - Precautions: {', '.join(other_disease['precautions'])}\n"
+    
+    print(ui_output)  # Display in terminal, can be displayed in UI
+
+    return result_for_ui
+
 
 
 def parse_medical_data(text):
